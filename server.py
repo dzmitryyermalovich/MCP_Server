@@ -78,42 +78,53 @@ async def get_outfit(day: str) -> str:
 async def tavily_search(query: str, ctx: Context) -> str:
     """
     Search the web using Tavily.
-
-    Args:
-        query: Your search question (e.g. 'Who is Leo Messi?').
-    Returns:
-        Titles + snippets of the top results.
+    Provide key via:
+      - HTTP header 'X-Tavily-Api-Key: <key>'  (preferred)
+      - HTTP header 'Authorization: Bearer <key>'
+      - or environment variable TAVILY_API_KEY
     """
-    # normalize header keys to lowercase
-    hdrs = {(k or "").lower(): v for k, v in (ctx.client_headers or {}).items()}
-    tavily_key = hdrs.get("x-tavily-api-key") or os.getenv("TAVILY_API_KEY")
+    hdrs_raw = ctx.client_headers or {}
+    hdrs = {(k or "").lower(): v for k, v in hdrs_raw.items()}
+
+    # Accept several variants, prioritize headers
+    tavily_key = (
+        hdrs.get("x-tavily-api-key")
+        or (hdrs.get("authorization")[7:] if isinstance(hdrs.get("authorization"), str) and hdrs.get("authorization").lower().startswith("bearer ") else None)
+        or os.getenv("TAVILY_API_KEY")
+    )
 
     _log("=== Tavily Debug ===")
-    _log("client_headers:", hdrs)
+    _log("client_headers (lowercased):", {k: (v[:6] + "..." if isinstance(v, str) and any(t in k for t in ["key","auth","token"]) else v) for k, v in hdrs.items()})
     _log("tavily_key_present:", bool(tavily_key))
     _log("====================")
 
-
     if not tavily_key:
-        return "Error: No Tavily API key provided. Supply it via HTTP header TAVILY_API_KEY or set TAVILY_API_KEY in the environment."
+        return (
+            "Error: Tavily API key missing. "
+            "Send header 'X-Tavily-Api-Key: <key>' or 'Authorization: Bearer <key>', "
+            "or set TAVILY_API_KEY in server env. "
+            f"Seen header keys: {list(hdrs.keys())}"
+        )
 
     try:
         client = TavilyClient(api_key=tavily_key)
-        response = client.search(query)
+        resp = client.search(query)   # simple call; adjust if you use advanced params
     except Exception as e:
-        return f"Tavily error: {e}"
+        # Surface the actual error to your UI instead of a generic message
+        return f"Tavily error during search: {type(e).__name__}: {e}"
 
-    results = response.get("results", [])
+    results = (resp or {}).get("results") or []
     if not results:
-        return "No results."
+        # Include the raw response to help diagnose auth/plan errors
+        return f"No results. Raw Tavily response: {resp}"
 
-    lines = []
+    parts = []
     for r in results:
         title = r.get("title", "(no title)")
-        snippet = r.get("content", "").replace("\n", " ").strip()
-        lines.append(f"{title}\n{snippet}")
+        snippet = (r.get("content") or "").replace("\n", " ").strip()
+        parts.append(f"{title}\n{snippet}")
+    return "\n\n".join(parts)
 
-    return "\n\n".join(lines)
 
 
 if __name__ == "__main__":
