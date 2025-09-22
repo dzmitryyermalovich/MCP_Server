@@ -13,6 +13,8 @@ load_dotenv()
 PORT = os.environ.get("PORT", 10000)
 mcp = FastMCP("PersonalHelper", host="0.0.0.0", port=PORT)
 
+def _log(*a):
+    print(*a, flush=True)
 
 @mcp.tool()
 async def convert_pln_to_usd(amount: str) -> str:
@@ -82,28 +84,25 @@ async def tavily_search(query: str, ctx: Context) -> str:
     Returns:
         Titles + snippets of the top results.
     """
-    hdrs = ctx.client_headers or {}
+    # normalize header keys to lowercase
+    hdrs = {(k or "").lower(): v for k, v in (ctx.client_headers or {}).items()}
+    tavily_key = hdrs.get("x-tavily-api-key") or os.getenv("TAVILY_API_KEY")
 
-    tavily_key = (
-        hdrs.get("TAVILY_API_KEY")
-        or hdrs.get("X-TAVILY-API-KEY")
-        or hdrs.get("tavily_api_key")
-        or hdrs.get("x-tavily-api-key")
-        or os.getenv("TAVILY_API_KEY")
-    )
+    _log("=== Tavily Debug ===")
+    _log("client_headers:", hdrs)
+    _log("tavily_key_present:", bool(tavily_key))
+    _log("====================")
 
-    # 🔎 Debug logging: show headers + resolved key
-    print("=== Tavily Debug ===")
-    print("Received headers:", hdrs)
-    print("Resolved tavily_key:", tavily_key)
-    print("====================")
 
     if not tavily_key:
         return "Error: No Tavily API key provided. Supply it via HTTP header TAVILY_API_KEY or set TAVILY_API_KEY in the environment."
 
-    tavily = TavilyClient(api_key=tavily_key)
+    try:
+        client = TavilyClient(api_key=tavily_key)
+        response = client.search(query)
+    except Exception as e:
+        return f"Tavily error: {e}"
 
-    response = tavily.search(query)
     results = response.get("results", [])
     if not results:
         return "No results."
