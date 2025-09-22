@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
 from dotenv import load_dotenv
 import yfinance as yf
 from datetime import datetime
@@ -73,7 +73,7 @@ async def get_outfit(day: str) -> str:
 
 
 @mcp.tool()
-async def tavily_search(query: str) -> str:
+async def tavily_search(query: str, ctx: Context) -> str:
     """
     Search the web using Tavily.
 
@@ -82,9 +82,17 @@ async def tavily_search(query: str) -> str:
     Returns:
         Titles + snippets of the top results.
     """
-    tavily_key = os.getenv("TAVILY_API_KEY")
+    hdrs = ctx.client_headers or {}
+
+    tavily_key = (
+            hdrs.get("TAVILY_API_KEY")
+            or hdrs.get("X-TAVILY-API-KEY")
+            or hdrs.get("tavily_api_key")
+            or hdrs.get("x-tavily-api-key")
+            or os.getenv("TAVILY_API_KEY")
+    )
     if not tavily_key:
-        return "Error: No Tavily API key provided. Please set TAVILY_API_KEY in your environment."
+        return "Error: No Tavily API key provided. Supply it via HTTP header TAVILY_API_KEY or set TAVILY_API_KEY in the environment."
 
     tavily = TavilyClient(api_key=tavily_key)
 
