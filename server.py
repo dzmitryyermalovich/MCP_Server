@@ -13,9 +13,6 @@ load_dotenv()
 PORT = os.environ.get("PORT", 10000)
 mcp = FastMCP("PersonalHelper", host="0.0.0.0", port=PORT)
 
-def _log(*a):
-    print(*a, flush=True)
-
 @mcp.tool()
 async def convert_pln_to_usd(amount: str) -> str:
     """
@@ -70,41 +67,38 @@ async def get_outfit(day: str) -> str:
     """
     return outfit[day]
 
+def _log(*a): print(*a, flush=True)
 
-# Initialize Tavily client
+# --- optional: your other tools (convert_pln_to_usd, get_outfit) stay the same ---
+
+@mcp.tool()
+async def set_tavily_api_key(api_key: str, ctx: Context) -> str:
+    """
+    Save the Tavily API key for the current session.
+    The key is kept in memory (ctx.state) and NOT logged.
+    """
+    if not api_key or len(api_key) < 10:
+        return "Key looks invalid. Please paste a full Tavily API key."
+
+    # save only in-memory for this session
+    ctx.state["tavily_api_key"] = api_key
+    return "Saved Tavily API key for this session"
 
 
 @mcp.tool()
 async def tavily_search(query: str, ctx: Context) -> str:
     """
     Search the web using Tavily.
-    Provide key via:
-      - HTTP header 'X-Tavily-Api-Key: <key>'  (preferred)
-      - HTTP header 'Authorization: Bearer <key>'
-      - or environment variable TAVILY_API_KEY
+
+    Args:
+        query: Your search question (e.g. 'Who is Leo Messi?').
+    Returns:
+        Titles + snippets of the top results.
     """
-    hdrs_raw = ctx.client_headers or {}
-    hdrs = {(k or "").lower(): v for k, v in hdrs_raw.items()}
-
-    # Accept several variants, prioritize headers
-    tavily_key = (
-        hdrs.get("x-tavily-api-key")
-        or (hdrs.get("authorization")[7:] if isinstance(hdrs.get("authorization"), str) and hdrs.get("authorization").lower().startswith("bearer ") else None)
-        or os.getenv("TAVILY_API_KEY")
-    )
-
-    _log("=== Tavily Debug ===")
-    _log("client_headers (lowercased):", {k: (v[:6] + "..." if isinstance(v, str) and any(t in k for t in ["key","auth","token"]) else v) for k, v in hdrs.items()})
-    _log("tavily_key_present:", bool(tavily_key))
-    _log("====================")
+    tavily_key = ctx.state.get("tavily_api_key")
 
     if not tavily_key:
-        return (
-            "Error: Tavily API key missing. "
-            "Send header 'X-Tavily-Api-Key: <key>' or 'Authorization: Bearer <key>', "
-            "or set TAVILY_API_KEY in server env. "
-            f"Seen header keys: {list(hdrs.keys())}"
-        )
+        return "Error: No Tavily API key provided. Supply it via HTTP header TAVILY_API_KEY or set TAVILY_API_KEY in the environment."
 
     try:
         client = TavilyClient(api_key=tavily_key)
