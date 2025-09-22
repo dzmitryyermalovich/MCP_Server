@@ -85,17 +85,22 @@ async def tavily_search(query: str, ctx: Context) -> str:
     hdrs = ctx.client_headers or {}
 
     tavily_key = (
-            hdrs.get("TAVILY_API_KEY")
-            or hdrs.get("X-TAVILY-API-KEY")
-            or hdrs.get("tavily_api_key")
-            or hdrs.get("x-tavily-api-key")
-            or os.getenv("TAVILY_API_KEY")
+        hdrs.get("TAVILY_API_KEY")
+        or hdrs.get("X-TAVILY-API-KEY")
+        or hdrs.get("tavily_api_key")
+        or hdrs.get("x-tavily-api-key")
+        or os.getenv("TAVILY_API_KEY")
     )
+
+    # 🔎 Debug logging: show headers + resolved key
+    print("=== Tavily Debug ===")
+    print("Received headers:", hdrs)
+    print("Resolved tavily_key:", tavily_key)
+    print("====================")
 
     if not tavily_key:
         return "Error: No Tavily API key provided. Supply it via HTTP header TAVILY_API_KEY or set TAVILY_API_KEY in the environment."
-    else:
-        print(tavily_key)
+
     tavily = TavilyClient(api_key=tavily_key)
 
     response = tavily.search(query)
