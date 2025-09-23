@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import yfinance as yf
 from datetime import datetime
 from tavily import TavilyClient
-
+from fastmcp.server.dependencies import get_http_headers
 import httpx
 import json
 import os
@@ -69,20 +69,36 @@ async def get_outfit(day: str) -> str:
 
 def _log(*a): print(*a, flush=True)
 
-# --- optional: your other tools (convert_pln_to_usd, get_outfit) stay the same ---
-
-@mcp.tool()
-async def set_tavily_api_key(api_key: str, ctx: Context) -> str:
+# ---------------- helpers ----------------
+def _read_tavily_key_from_headers() -> str | None:
     """
-    Save the Tavily API key for the current session.
-    The key is kept in memory (ctx.state) and NOT logged.
+    Preferred: Authorization: Bearer <token>
+    Fallback:  X-Tavily-Api-Key: <token>
     """
-    if not api_key or len(api_key) < 10:
-        return "Key looks invalid. Please paste a full Tavily API key."
+    headers = get_http_headers() or {}
+    # normalize keys to lowercase
+    headers = { (k or "").lower(): v for k, v in headers.items() }
 
-    # save only in-memory for this session
-    ctx.state["tavily_api_key"] = api_key
-    return "Saved Tavily API key for this session"
+    # Authorization: Bearer <token>
+    auth = headers.get("authorization", "")
+    if isinstance(auth, str) and auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+
+    # X-Tavily-Api-Key: <token>
+    xkey = headers.get("x-tavily-api-key")
+    if isinstance(xkey, str) and xkey.strip():
+        return xkey.strip()
+
+    return None
+
+def _resolve_tavily_key() -> str | None:
+    # 1) headers
+    key = _read_tavily_key_from_headers()
+    if key:
+        return key
+    # 2) env
+    return os.getenv("TAVILY_API_KEY")
+
 
 
 @mcp.tool()
@@ -95,7 +111,7 @@ async def tavily_search(query: str, ctx: Context) -> str:
     Returns:
         Titles + snippets of the top results.
     """
-    tavily_key = ctx.state.get("tavily_api_key")
+    tavily_key = _resolve_tavily_key()
 
     if not tavily_key:
         return "Error: No Tavily API key provided. Supply it via HTTP header TAVILY_API_KEY or set TAVILY_API_KEY in the environment."
